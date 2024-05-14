@@ -3,8 +3,8 @@ use config::{ Config, File };
 mod templates;
 mod game_config;
 use game_config::{ GameConfig, GameInfoType, GodotGameInfo, GodotBuildContext };
-use std::process::Command;
-use serde_derive::{Serialize};
+use std::{io::{BufWriter, Write}, process::Command, time::{SystemTime, UNIX_EPOCH}};
+use serde_derive::Serialize;
 
 use std::path::Path;
 use tinytemplate::TinyTemplate;
@@ -25,8 +25,15 @@ struct Args {
     #[arg(short, long, default_value_t = false)]
     dry_run: bool,
 
-    #[arg(short, long, default_value_t = false)]
+    #[arg(long, default_value_t = false)]
     publish_only: bool,
+}
+
+#[derive(Serialize)]
+struct GameVersionInfo {
+    build_time: u64,
+    commit_hash: String,
+    is_dirty: bool
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> { 
@@ -44,6 +51,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .build()?.try_deserialize()?;
 
     let output_path_abs = std::fs::canonicalize(Path::new(&args.output))?;
+
+    let repo = gix::discover(game_path);
+    if let Ok(repo) = repo {
+        let head = repo.head()?;
+        let version_info = GameVersionInfo {
+            commit_hash: head.id().unwrap().shorten_or_id().to_string(),
+            build_time: SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs(),
+            is_dirty: repo.is_dirty().expect("Something went wrong")
+        };
+
+        let version_data_path = game_path.join("version.json");
+        let file = std::fs::File::create(version_data_path)?;
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, &version_info)?;
+        writer.flush()?;
+    }
 
     match game_config.game_info {
         GameInfoType::Godot(godot_game_info) => {
