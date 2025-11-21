@@ -27,6 +27,9 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     publish_only: bool,
+
+    #[arg(long, default_value = ".lowly.toml")]
+    config_path: String
 }
 
 #[derive(Serialize)]
@@ -40,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let game_path = Path::new(&args.path);
-    let game_config_path = game_path.join(".lowly.toml");
+    let game_config_path = game_path.join(args.config_path);
     
     let cwd = std::env::current_dir()?;
     let game_config_path_local = cwd.join(".lowly_local.toml");
@@ -51,7 +54,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .build()?.try_deserialize()?;
 
     let output_path_abs = std::fs::canonicalize(Path::new(&args.output))?;
-
     let repo = gix::discover(game_path);
     if let Ok(repo) = repo {
         let head = repo.head()?;
@@ -114,15 +116,15 @@ fn godot(game_info: GodotGameInfo, game_path: String, game_output_path: String) 
         let from = Path::new(&from_path);
         let to = Path::new(&to_path);
 
-        std::fs::copy(from, to)?;
+        std::fs::copy(from, to).expect("error copying");
     }
 
     let temp_dir = std::env::temp_dir();
     let temp_dir_path = Path::new(&temp_dir);
 
     let build_path = temp_dir_path.join("lowly_build.vdf");
-    std::fs::write(&build_path, build_context.compile_app_build()?)?;
-    std::fs::write(temp_dir_path.join("lowly_depot_build.vdf"), build_context.compile_depot_build()?)?;
+    std::fs::write(&build_path, build_context.compile_app_build()?).expect("Error writing app build script");
+    std::fs::write(temp_dir_path.join("lowly_depot_build.vdf"), build_context.compile_depot_build()?).expect("Error writing app depot script");
 
     let status = Command::new("steamcmd")
         .arg("+login")
