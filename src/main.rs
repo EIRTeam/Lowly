@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match game_config.game_info {
         GameInfoType::Godot(godot_game_info) => {
-            godot(godot_game_info, game_path.to_string_lossy().to_string(), output_path_abs.to_string_lossy().to_string())?;
+            godot(godot_game_info, game_path.to_string_lossy().to_string(), output_path_abs.to_string_lossy().to_string(), args.dry_run)?;
         }
     }
 
@@ -87,10 +87,12 @@ struct GodotTemplateInfo {
     pub game_output_path: String
 }
 
-fn godot(game_info: GodotGameInfo, game_path: String, game_output_path: String) -> Result<(), Box<dyn std::error::Error>> {
+fn godot(game_info: GodotGameInfo, game_path: String, game_output_path: String, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let build_context = GodotBuildContext::new(game_info, game_path, game_output_path)?;
 
+
     for pck in build_context.game_info.pcks.iter() {
+        println!("Exporting preset PCK {} {}", pck.name, pck.export_preset_name);
         let path = Path::new(&build_context.game_output_path).join(&pck.name);
         let status = Command::new(&build_context.game_info.editor_path)
             .arg("--headless")
@@ -116,27 +118,30 @@ fn godot(game_info: GodotGameInfo, game_path: String, game_output_path: String) 
         let from = Path::new(&from_path);
         let to = Path::new(&to_path);
 
+        println!("Copy {} to {}", from.to_str().expect("Conversion failed"), to.to_str().expect("Conversion failed"));
         std::fs::copy(from, to).expect("error copying");
     }
 
-    let temp_dir = std::env::temp_dir();
-    let temp_dir_path = Path::new(&temp_dir);
+    if !dry_run {
+        let temp_dir = std::env::temp_dir();
+        let temp_dir_path = Path::new(&temp_dir);
 
-    let build_path = temp_dir_path.join("lowly_build.vdf");
-    std::fs::write(&build_path, build_context.compile_app_build()?).expect("Error writing app build script");
-    std::fs::write(temp_dir_path.join("lowly_depot_build.vdf"), build_context.compile_depot_build()?).expect("Error writing app depot script");
+        let build_path = temp_dir_path.join("lowly_build.vdf");
+        std::fs::write(&build_path, build_context.compile_app_build()?).expect("Error writing app build script");
+        std::fs::write(temp_dir_path.join("lowly_depot_build.vdf"), build_context.compile_depot_build()?).expect("Error writing app depot script");
 
-    let status = Command::new("steamcmd")
-        .arg("+login")
-        .arg(build_context.game_info.steam_account_name)
-        .arg("+run_app_build")
-        .arg(build_path)
-        .arg("+exit")
-        .status()?;
-    if !status.success() {
-        println!("SteamCMD process failed with error code {}", status);
+        let status = Command::new("steamcmd")
+            .arg("+login")
+            .arg(build_context.game_info.steam_account_name)
+            .arg("+run_app_build")
+            .arg(build_path)
+            .arg("+exit")
+            .status()?;
+        if !status.success() {
+            println!("SteamCMD process failed with error code {}", status);
+        }
+        println!("{}", build_context.game_info.steam_branch);
     }
-    println!("{}", build_context.game_info.steam_branch);
 
     println!("Lowly: All OK!");
 
